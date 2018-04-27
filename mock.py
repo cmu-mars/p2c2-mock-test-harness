@@ -10,6 +10,7 @@ app = flask.Flask(__name__)
 
 @app.route('/ready', methods=['POST'])
 def ready():
+    print("We're ready to go! :-)")
     ip_list = ['host.docker.internal:6060']
     return flask.jsonify(ip_list), 200
 
@@ -38,12 +39,24 @@ def launch(*,
            url_ta: str = '0.0.0.0',
            debug: bool = True
            ) -> None:
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port, debug=debug)
 
 
 if __name__ == '__main__':
-    # FIXME pass in TA URL
-    port = 5001
-    url_ta = 'http://cp2_ta:5000'
-    debug = True
-    launch(port=port, url_ta=url_ta, debug=True)
+    desc = 'MARS Phase II CP2 -- Mock Test Harness'
+    parser = argparse.ArgumentParser(description=desc)
+    parser.add_argument('-p', '--port',
+                        type=int,
+                        default=5001,
+                        help='the port that should be used by this server.')
+    parser.add_argument('--url-ta',
+                        type=str,
+                        required=True,
+                        help='the URL of the TA.')
+    parser.add_argument('--debug',
+                        action='store_true',
+                        help='enables debugging mode.')
+    args = parser.parse_args()
+    launch(port=args.port,
+           url_ta=args.url_ta,
+           debug=args.debug)
