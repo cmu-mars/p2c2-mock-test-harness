@@ -1,6 +1,11 @@
 #!/usr/bin/env python
+#
+# FIXME use logging rather than print statements
+#
+from typing import Optional
 import argparse
 import json
+import urllib.parse
 
 import requests
 import flask
@@ -8,11 +13,34 @@ import flask
 app = flask.Flask(__name__)
 
 
+class TestHarness(object):
+    def __init__(self, url_ta: str) -> None:
+        self.__url_ta = url_ta
+
+    def _url(self, path: str) -> str:
+        return urllib.parse.urljoin(self.__url_ta, path)
+
+    def create_scenario(self) -> None:
+        print("Creating scenario...")
+
+    def stop(self) -> None:
+        print("STOPPING TEST")
+
+    def ready(self) -> None:
+        self.create_scenario()
+
+
+harness = None # type: Optional[TestHarness]
+
+
+# WARNING possible race condition
 @app.route('/ready', methods=['POST'])
 def ready():
+    harness.ready()
     print("We're ready to go! :-)")
     ip_list = ['host.docker.internal:6060']
-    return flask.jsonify(ip_list), 200
+    jsn = {'bugzoo-server-urls': ip_list}
+    return flask.jsonify(jsn), 200
 
 
 @app.route('/error', methods=['POST'])
@@ -39,6 +67,8 @@ def launch(*,
            url_ta: str = '0.0.0.0',
            debug: bool = True
            ) -> None:
+    global harness
+    harness = TestHarness(url_ta)
     app.run(host='0.0.0.0', port=port, debug=debug)
 
 
