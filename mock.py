@@ -1,33 +1,141 @@
 #!/usr/bin/env python
-#
-# FIXME use logging rather than print statements
-#
-from typing import Optional
+from typing import Optional, List, Any
 import argparse
 import json
 import urllib.parse
+import threading
+import time
+import random
+import logging
+import sys
 
 import requests
 import flask
+
+logger = logging.getLogger("mockth")  # type: logging.Logger
+logger.addHandler(logging.NullHandler())
 
 app = flask.Flask(__name__)
 
 
 class TestHarness(object):
     def __init__(self, url_ta: str) -> None:
+        self.__finished = threading.Event()
         self.__url_ta = url_ta
+        self.__thread = None # type: Optional[threading.Thread]
+        self.__errored = False
 
     def _url(self, path: str) -> str:
         return urllib.parse.urljoin(self.__url_ta, path)
 
-    def create_scenario(self) -> None:
-        print("Creating scenario...")
+    def __mutable_files(self) -> List[str]:
+        url = self._url("files")
+        r = requests.get(url)
+        if r.status_code != 200:
+            logger.error("Failed to determine mutable files: %s", r)
+            raise SystemExit
 
-    def stop(self) -> None:
-        print("STOPPING TEST")
+        logger.debug("Parsing JSON response from GET /files")
+        files = r.json()
+        logger.debug("Parsed JSON response from GET /files")
+        assert isinstance(files, list)
+        assert all(isinstance(f, str) for f in files)
+        return files
+
+    def __perturbations(self) -> List[Any]:
+        perturbations = []
+
+        logger.info("Finding set of mutable files.")
+        files = self.__mutable_files()
+        logger.info("Found set of mutable files: %s", files)
+
+        fn = random.choice(files)
+        logger.info("Finding perturbations in file: %s", fn)
+
+        perturbations_in_file = \
+            requests.get(self._url("perturbations"),
+                         json={'file': fn,
+                               'shape': 'delete-conditional-control-flow'})
+        logger.info("Found %d perturbations in file: %s",
+                    len(perturbations_in_file),
+                    fn)
+        perturbations += perturbations_in_file
+
+        return perturbations
+
+    def __perturb(self) -> bool:
+        """
+        Attempts to perturb the system.
+
+        Returns:
+            true if successfully perturbed, or false if no perturbation could
+            be successfully applied.
+        """
+        logger.info("Perturbing system...")
+
+        # keep attempting to apply perturbations until one is successful
+        logger.info("Computing set of perturbations")
+        perturbations = self.__perturbations()
+        logger.info("Computed set of perturbations")
+        logger.info("Shuffling perturbations")
+        perturbations = random.shuffle(perturbations)
+        logger.info("Shuffled perturbations")
+        while perturbations:
+            p = perturbations.pop()
+            logger.info("Attempting to apply perturbation: %s", p)
+            r = requests.post(self._url("perturb"), json=p)
+            if r.status_code == 204:
+                logger.info("Successfully applied perturbation.")
+                return True
+
+        logger.error("Failed to perturb system.")
+        return False
+
+    def __adapt(self,
+              time_limit_secs: Optional[float],
+              attempt_limit: Optional[int]
+              ) -> None:
+        assert (time_limit_secs is not None) or (attempt_limit is not None), \
+            "no resource limits specified"
+        logger.info("Triggering adaptation...")
+
+        payload = {}
+        if time_limit_secs is not None:
+            payload['time-limit'] = time_limit_secs
+        if attempt_limit is not None:
+            payload['attempt-limit'] = attempt_limit
+
+        r = requests.post(self.__url("adapt"), json=payload)
+        assert r.status_code == 204
+        logger.info("Triggered adaptation")
+
+    def __stop(self) -> None:
+        logger.info("STOPPING TEST")
+
+    def __start(self) -> None:
+        time.sleep(5)
+        if not self.__perturb():
+            logger.error("Failed to inject ANY perturbation into the system.")
+            raise SystemExit # TODO how is this handled?
+        self.__adapt(600.0, None) # TODO mock values
+
+        # wait until we're done :-)
+        self.__finished.wait()
+        logger.info("__start is finished.")
 
     def ready(self) -> None:
-        self.create_scenario()
+        logger.info("We're ready to go!")
+        self.__thread = threading.Thread(target=self.__start)
+        self.__thread.start()
+
+    def error(self) -> None:
+        logger.info("An error occurred -- killing the test harness")
+        self.__errored = True
+        self.__finished.set()
+
+    def done(self) -> None:
+        logger.info("Adaptation has finished.")
+        self.__finished.set()
 
 
 harness = None # type: Optional[TestHarness]
@@ -37,7 +145,6 @@ harness = None # type: Optional[TestHarness]
 @app.route('/ready', methods=['POST'])
 def ready():
     harness.ready()
-    print("We're ready to go! :-)")
     ip_list = ['host.docker.internal:6060']
     jsn = {'bugzoo-server-urls': ip_list}
     return flask.jsonify(jsn), 200
@@ -47,19 +154,24 @@ def ready():
 def error():
     # TODO this should somehow kill everything?
     jsn = flask.request.json
-    print("ERROR: {}".format(json.dumps(jsn)))
+    logger.info("ERROR: {}".format(json.dumps(jsn)))
+    harness.error()
+    return '', 204
 
 
 @app.route('/status', methods=['POST'])
 def status():
     jsn = flask.request.json
-    print("STATUS: {}".format(json.dumps(jsn)))
+    logger.info("STATUS: {}".format(json.dumps(jsn)))
+    return '', 204
 
 
 @app.route('/done', methods=['POST'])
 def done():
     jsn = flask.request.json
-    print("DONE: {}".format(json.dumps(jsn)))
+    logger.info("DONE: {}".format(json.dumps(jsn)))
+    harness.done()
+    return '', 204
 
 
 def launch(*,
@@ -69,6 +181,14 @@ def launch(*,
            ) -> None:
     global harness
     harness = TestHarness(url_ta)
+    log_to_stdout = logging.StreamHandler(stream=sys.stdout)
+
+    logging.getLogger('werkzeug').setLevel(logging.DEBUG)
+    logging.getLogger('werkzeug').addHandler(log_to_stdout)
+
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(log_to_stdout)
+
     app.run(host='0.0.0.0', port=port, debug=debug)
 
 
