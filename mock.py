@@ -11,7 +11,6 @@ import sys
 
 import requests
 import flask
-import boggart
 
 logger = logging.getLogger("mockth")  # type: logging.Logger
 logger.addHandler(logging.NullHandler())
@@ -70,8 +69,7 @@ class TestHarness(object):
             assert isinstance(jsn, dict)
             assert 'perturbations' in jsn
             assert isinstance(jsn['perturbations'], list)
-            perturbations_in_file = \
-                [boggart.Mutation.from_dict(d) for d in jsn['perturbations']]
+            perturbations_in_file = jsn['perturbations']
         except Exception as e:
             logger.exception("Failed to decode perturbations: %s", e)
             raise
