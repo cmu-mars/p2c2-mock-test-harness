@@ -84,19 +84,23 @@ class TestHarness(object):
         logger.info("Perturbing system...")
 
         # keep attempting to apply perturbations until one is successful
-        logger.info("Computing set of perturbations")
+        logger.info("Computing set of perturbations.")
         perturbations = self.__perturbations()
-        logger.info("Computed set of perturbations")
-        logger.info("Shuffling perturbations")
+        logger.info("Computed set of %d perturbations.",
+                    len(perturbations))
+        logger.info("Shuffling perturbations.")
         perturbations = random.shuffle(perturbations)
-        logger.info("Shuffled perturbations")
+        logger.info("Shuffled perturbations.")
         while perturbations:
             p = perturbations.pop()
-            logger.info("Attempting to apply perturbation: %s", p)
+            logger.info("Attempting to apply perturbation: %s.", p)
             r = requests.post(self._url("perturb"), json=p)
             if r.status_code == 204:
                 logger.info("Successfully applied perturbation.")
                 return True
+            else:
+                logger.debug("Failed to apply perturbation: %s\nReason: %s.",
+                             p, r)
 
         logger.error("Failed to perturb system.")
         return False
@@ -117,7 +121,7 @@ class TestHarness(object):
 
         r = requests.post(self.__url("adapt"), json=payload)
         assert r.status_code == 204
-        logger.info("Triggered adaptation")
+        logger.info("Triggered adaptation.")
 
     def __stop(self) -> None:
         logger.info("STOPPING TEST")
@@ -191,11 +195,14 @@ def launch(*,
            ) -> None:
     global harness
     harness = TestHarness(url_ta)
-    log_to_stdout = logging.StreamHandler(stream=sys.stdout)
 
+    log_formatter = \
+        logging.Formatter('%(asctime)s:%(name)s:%(levelname)s: %(message)s',
+                          '%Y-%m-%d %H:%M:%S')
+    log_to_stdout = logging.StreamHandler()
+    log_to_stdout.setFormatter(log_formatter)
     logging.getLogger('werkzeug').setLevel(logging.DEBUG)
     logging.getLogger('werkzeug').addHandler(log_to_stdout)
-
     logger.setLevel(logging.DEBUG)
     logger.addHandler(log_to_stdout)
 
