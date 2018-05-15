@@ -11,6 +11,7 @@ import sys
 
 import requests
 import flask
+import boggart
 
 logger = logging.getLogger("mockth")  # type: logging.Logger
 logger.addHandler(logging.NullHandler())
@@ -64,10 +65,18 @@ class TestHarness(object):
             return []
 
         logger.debug("Computed all perturbations in file: %s", fn)
-        perturbations_in_file = response.json()
+        try:
+            jsn = response.json()
+            assert isinstance(jsn, dict)
+            assert 'perturbations' in jsn
+            assert isinstance(jsn['perturbations'], list)
+            perturbations_in_file = \
+                [boggart.Mutation.from_dict(d) for d in jsn['perturbations']]
+        except Exception as e:
+            logger.exception("Failed to decode perturbations: %s", e)
+            raise
         logger.info("Found %d perturbations in file: %s",
-                    len(perturbations_in_file),
-                    fn)
+                    len(perturbations_in_file), fn)
         perturbations += perturbations_in_file
 
         logger.info("Finished computing set of all perturbations.")
@@ -89,8 +98,9 @@ class TestHarness(object):
         logger.info("Computed set of %d perturbations.",
                     len(perturbations))
         logger.info("Shuffling perturbations.")
-        perturbations = random.shuffle(perturbations)
+        random.shuffle(perturbations)
         logger.info("Shuffled perturbations.")
+        logger.debug("Perturbations: %s.", perturbations)
         while perturbations:
             p = perturbations.pop()
             logger.info("Attempting to apply perturbation: %s.", p)
@@ -99,7 +109,7 @@ class TestHarness(object):
                 logger.info("Successfully applied perturbation.")
                 return True
             else:
-                logger.debug("Failed to apply perturbation: %s\nReason: %s.",
+                logger.debug("Failed to apply perturbation: %s [reason: %s].",
                              p, r)
 
         logger.error("Failed to perturb system.")
