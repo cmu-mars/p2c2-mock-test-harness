@@ -1,7 +1,7 @@
 FROM python:3-alpine
-RUN pip install --no-cache requests flask
-WORKDIR /opt/mockth
 COPY requirements.txt .
+RUN pip install --no-cache --upgrade -r requirements.txt
+WORKDIR /opt/mockth
 COPY mock.py .
 ENTRYPOINT ["python", "-u", "/opt/mockth/mock.py"]
 CMD ["-p", "5001", "--url-ta", "http://cp2_ta:5000", "--debug"]
