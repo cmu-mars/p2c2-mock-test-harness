@@ -52,15 +52,25 @@ class TestHarness(object):
         fn = random.choice(files)
         logger.info("Finding perturbations in file: %s", fn)
 
-        perturbations_in_file = \
+        response = \
             requests.get(self._url("perturbations"),
                          json={'file': fn,
                                'shape': 'delete-conditional-control-flow'})
+
+        if response.status_code != 200:
+            logger.warning("Failed to find perturbations in file: %s.\nResponse: %s",  # noqa: pycodestyle
+                           fn,
+                           response)
+            return []
+
+        logger.debug("Computed all perturbations in file: %s", fn)
+        perturbations_in_file = response.json()
         logger.info("Found %d perturbations in file: %s",
                     len(perturbations_in_file),
                     fn)
         perturbations += perturbations_in_file
 
+        logger.info("Finished computing set of all perturbations.")
         return perturbations
 
     def __perturb(self) -> bool:
