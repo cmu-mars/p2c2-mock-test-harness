@@ -7,10 +7,12 @@ import threading
 import time
 import random
 import logging
+import logging.handlers
 import sys
 
 import requests
 import flask
+import http.client
 
 logger = logging.getLogger("mockth")  # type: logging.Logger
 logger.addHandler(logging.NullHandler())
@@ -26,7 +28,7 @@ class TestHarness(object):
         self.__errored = False
 
     def _url(self, path: str) -> str:
-        return urllib.parse.urljoin(self.__url_ta, path)
+        return '{}/{}'.format(self.__url_ta, path)
 
     def __mutable_files(self) -> List[str]:
         url = self._url("files")
@@ -124,11 +126,19 @@ class TestHarness(object):
         payload = {}
         if time_limit_secs is not None:
             payload['time-limit'] = time_limit_secs
+            logger.debug('using time limit of %d seconds', time_limit_secs)
         if attempt_limit is not None:
             payload['attempt-limit'] = attempt_limit
+            logger.debug('using limit of %d attempts', attempt_limit)
 
-        r = requests.post(self.__url("adapt"), json=payload)
-        assert r.status_code == 204
+        logger.debug("computing /adapt URL")
+        url = self._url("adapt")
+        r = requests.post(url, json=payload)
+        logger.debug("/adapt response: %s", r)
+        logger.debug("/adapt response: %s", r.json())
+        logger.debug("/adapt code: %d", r.status_code)
+        if not r.status_code == 204:
+            logger.error("SOMETHING BAD HAPPENED")
         logger.info("Triggered adaptation.")
 
     def __stop(self) -> None:
@@ -199,7 +209,8 @@ def done():
 def launch(*,
            port: int = 5001,
            url_ta: str = '0.0.0.0',
-           debug: bool = True
+           debug: bool = True,
+           log_file: str = 'cp2th.log'
            ) -> None:
     global harness
     harness = TestHarness(url_ta)
@@ -209,12 +220,36 @@ def launch(*,
                           '%Y-%m-%d %H:%M:%S')
     log_to_stdout = logging.StreamHandler()
     log_to_stdout.setFormatter(log_formatter)
+    log_to_stdout.setLevel(logging.DEBUG)
+
+    log_to_file = \
+        logging.handlers.WatchedFileHandler(log_file, mode='w')
+    log_to_file.setFormatter(log_formatter)
+    log_to_file.setLevel(logging.DEBUG)
+
+    http.client.HTTPConnection.debuglevel = 1
+
     logging.getLogger('werkzeug').setLevel(logging.DEBUG)
     logging.getLogger('werkzeug').addHandler(log_to_stdout)
+    logging.getLogger('werkzeug').addHandler(log_to_file)
+
+    log_requests = logging.getLogger('requests')  # type: logging.Logger  # noqa: pycodestyle
+    log_requests.propagate = True
+    log_requests.setLevel(logging.DEBUG)
+    log_requests.addHandler(log_to_stdout)
+    log_requests.addHandler(log_to_file)
+
+    log_requests = logging.getLogger('requests.packages.urllib3')  # type: logging.Logger  # noqa: pycodestyle
+    log_requests.propagate = True
+    log_requests.setLevel(logging.DEBUG)
+    log_requests.addHandler(log_to_stdout)
+    log_requests.addHandler(log_to_file)
+
     logger.setLevel(logging.DEBUG)
     logger.addHandler(log_to_stdout)
+    logger.addHandler(log_to_file)
 
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    app.run(host='0.0.0.0', port=port, debug=debug, threaded=True)
 
 
 if __name__ == '__main__':
@@ -226,12 +261,16 @@ if __name__ == '__main__':
                         help='the port that should be used by this server.')
     parser.add_argument('--url-ta',
                         type=str,
-                        required=True,
                         help='the URL of the TA.')
+    parser.add_argument('--log-file',
+                        type=str,
+                        required=True,
+                        help='the path to the file where logs should be written.')  # noqa: pycodestyle
     parser.add_argument('--debug',
                         action='store_true',
                         help='enables debugging mode.')
     args = parser.parse_args()
     launch(port=args.port,
            url_ta=args.url_ta,
+           log_file=args.log_file,
            debug=args.debug)
