@@ -126,14 +126,15 @@ class TestHarness(object):
         payload = {}
         if time_limit_secs is not None:
             payload['time-limit'] = time_limit_secs
-            logger.debug('using time limit of %d seconds', time_limit_secs)
+            logger.debug('using time limit of %d minutes', time_limit_secs)
         if attempt_limit is not None:
             payload['attempt-limit'] = attempt_limit
             logger.debug('using limit of %d attempts', attempt_limit)
 
         logger.debug("computing /adapt URL")
+        logger.debug("payload for /adapt: %s", payload)
         url = self._url("adapt")
-        r = requests.post(url, json=payload)
+        r = requests.post(url, json=payload, headers={'content-type': ''})
         logger.debug("/adapt response: %s", r)
         logger.debug("/adapt response: %s", r.json())
         logger.debug("/adapt code: %d", r.status_code)
