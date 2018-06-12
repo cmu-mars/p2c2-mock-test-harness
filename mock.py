@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from typing import Optional, List, Any
+from pprint import pprint as pp
 import argparse
 import json
 import urllib.parse
@@ -18,6 +19,11 @@ logger = logging.getLogger("mockth")  # type: logging.Logger
 logger.addHandler(logging.NullHandler())
 
 app = flask.Flask(__name__)
+
+TIME_LIMIT = 600.0
+SHAPES = [
+    'flip-boolean-operator'
+]
 
 
 class TestHarness(object):
@@ -52,12 +58,15 @@ class TestHarness(object):
         logger.info("Found set of mutable files: %s", files)
 
         fn = random.choice(files)
+        fn = 'src/ros_comm/roscpp/src/libros/transport_subscriber_link.cpp'
         logger.info("Finding perturbations in file: %s", fn)
+
+        shape = random.choice(SHAPES)
 
         response = \
             requests.get(self._url("perturbations"),
                          json={'file': fn,
-                               'shape': 'delete-conditional-control-flow'})
+                               'shape': shape})
 
         if response.status_code != 200:
             logger.warning("Failed to find perturbations in file: %s.\nResponse: %s",  # noqa: pycodestyle
@@ -100,10 +109,12 @@ class TestHarness(object):
         logger.info("Shuffling perturbations.")
         random.shuffle(perturbations)
         logger.info("Shuffled perturbations.")
-        logger.debug("Perturbations: %s.", perturbations)
+        logger.debug("%d perturbations: %s.",
+                     len(perturbations), perturbations)
         while perturbations:
             p = perturbations.pop()
             logger.info("Attempting to apply perturbation: %s.", p)
+            logger.debug("%d perturbations left.", len(perturbations))
             r = requests.post(self._url("perturb"), json=p)
             if r.status_code == 204:
                 logger.info("Successfully applied perturbation.")
@@ -134,7 +145,7 @@ class TestHarness(object):
         logger.debug("computing /adapt URL")
         logger.debug("payload for /adapt: %s", payload)
         url = self._url("adapt")
-        r = requests.post(url, json=payload, headers={'content-type': ''})
+        r = requests.post(url, json=payload)
         logger.debug("/adapt response: %s", r)
         logger.debug("/adapt response: %s", r.json())
         logger.debug("/adapt code: %d", r.status_code)
@@ -150,7 +161,7 @@ class TestHarness(object):
         if not self.__perturb():
             logger.error("Failed to inject ANY perturbation into the system.")
             raise SystemExit # TODO how is this handled?
-        self.__adapt(600.0, None) # TODO mock values
+        self.__adapt(TIME_LIMIT, None)
 
         # wait until we're done :-)
         self.__finished.wait()
@@ -166,9 +177,16 @@ class TestHarness(object):
         self.__errored = True
         self.__finished.set()
 
-    def done(self) -> None:
+    def done(self, report) -> None:
         logger.info("Adaptation has finished.")
         self.__finished.set()
+        pp(report)
+        num_attempts = report['num-attempts']
+        running_time = report['running-time']
+        outcome = report['outcome']
+        logger.info("Num. attempted patches: %d", num_attempts)
+        logger.info("Running time: %.2f minutes", running_time)
+        logger.info("Outcome: %s", outcome)
 
 
 harness = None # type: Optional[TestHarness]
@@ -201,9 +219,8 @@ def status():
 
 @app.route('/done', methods=['POST'])
 def done():
-    jsn = flask.request.json
-    logger.info("DONE: {}".format(json.dumps(jsn)))
-    harness.done()
+    report = flask.request.json
+    harness.done(report)
     return '', 204
 
 
