@@ -20,7 +20,7 @@ logger.addHandler(logging.NullHandler())
 
 app = flask.Flask(__name__)
 
-TIME_LIMIT = 600.0
+TIME_LIMIT = 15.0
 SHAPES = [
     'flip-boolean-operator'
 ]
