@@ -1,6 +1,6 @@
 FROM python:3-alpine
 COPY requirements.txt .
-RUN pip install --no-cache --upgrade -r requirements.txt
+RUN pip install --no-cache -r requirements.txt
 WORKDIR /opt/mockth
 COPY mock.py .
 ENTRYPOINT ["python", "-u", "/opt/mockth/mock.py"]
