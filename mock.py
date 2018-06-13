@@ -119,9 +119,7 @@ class TestHarness(object):
         perturbations = self.__perturbations()
         logger.info("Computed set of %d perturbations.",
                     len(perturbations))
-        logger.info("Shuffling perturbations.")
         random.shuffle(perturbations)
-        logger.info("Shuffled perturbations.")
         logger.debug("%d perturbations: %s.",
                      len(perturbations), perturbations)
         while perturbations:
@@ -133,8 +131,8 @@ class TestHarness(object):
                 logger.info("Successfully applied perturbation.")
                 return True
             else:
-                logger.debug("Failed to apply perturbation: %s [reason: %s].",
-                             p, r)
+                logger.warning("Failed to apply perturbation: %s [reason: %s].",
+                               p, r)
 
         logger.error("Failed to perturb system.")
         return False
