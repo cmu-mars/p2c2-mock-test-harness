@@ -20,18 +20,33 @@ logger.addHandler(logging.NullHandler())
 
 app = flask.Flask(__name__)
 
-TIME_LIMIT = 15.0
-SHAPES = [
+OPERATORS = [
+    'flip-arithmetic-operator',
+    'flip-relational-operator',
     'flip-boolean-operator'
 ]
 
 
 class TestHarness(object):
-    def __init__(self, url_ta: str) -> None:
+    def __init__(self,
+                 url_ta: str,
+                 time_limit_mins: float,
+                 operator: Optional[str]
+                 ) -> None:
+        assert time_limit_mins > 0
+        self.__time_limit_mins = time_limit_mins
         self.__finished = threading.Event()
         self.__url_ta = url_ta
         self.__thread = None # type: Optional[threading.Thread]
         self.__errored = False
+
+        if not operator:
+            logging.info("no perturbation operator specified: choosing one at random.")  # noqa: pycodestyle
+            operator = random.choice(OPERATORS)
+        else:
+            assert operator in OPERATORS
+        logging.info("using perturbation operator: %s", operator)
+        self.__operator = operator
 
     def _url(self, path: str) -> str:
         return '{}/{}'.format(self.__url_ta, path)
@@ -61,12 +76,10 @@ class TestHarness(object):
         fn = 'src/ros_comm/roscpp/src/libros/transport_subscriber_link.cpp'
         logger.info("Finding perturbations in file: %s", fn)
 
-        shape = random.choice(SHAPES)
-
         response = \
             requests.get(self._url("perturbations"),
                          json={'file': fn,
-                               'shape': shape})
+                               'shape': self.__operator})
 
         if response.status_code != 200:
             logger.warning("Failed to find perturbations in file: %s.\nResponse: %s",  # noqa: pycodestyle
@@ -126,22 +139,13 @@ class TestHarness(object):
         logger.error("Failed to perturb system.")
         return False
 
-    def __adapt(self,
-              time_limit_secs: Optional[float],
-              attempt_limit: Optional[int]
-              ) -> None:
-        assert (time_limit_secs is not None) or (attempt_limit is not None), \
-            "no resource limits specified"
+    def __adapt(self) -> None:
         logger.info("Triggering adaptation...")
 
-        payload = {}
-        if time_limit_secs is not None:
-            payload['time-limit'] = time_limit_secs
-            logger.debug('using time limit of %d minutes', time_limit_secs)
-        if attempt_limit is not None:
-            payload['attempt-limit'] = attempt_limit
-            logger.debug('using limit of %d attempts', attempt_limit)
-
+        payload = {
+            'time-limit': self.__time_limit_mins
+        }
+        logger.info('using time limit of %.2f minutes', self.__time_limit_mins)
         logger.debug("computing /adapt URL")
         logger.debug("payload for /adapt: %s", payload)
         url = self._url("adapt")
@@ -161,7 +165,7 @@ class TestHarness(object):
         if not self.__perturb():
             logger.error("Failed to inject ANY perturbation into the system.")
             raise SystemExit # TODO how is this handled?
-        self.__adapt(TIME_LIMIT, None)
+        self.__adapt()
 
         # wait until we're done :-)
         self.__finished.wait()
@@ -228,10 +232,14 @@ def launch(*,
            port: int = 5001,
            url_ta: str = '0.0.0.0',
            debug: bool = True,
-           log_file: str = 'cp2th.log'
+           log_file: str = 'cp2th.log',
+           time_limit_mins: float = 15,
+           operator: Optional[str] = None
            ) -> None:
     global harness
-    harness = TestHarness(url_ta)
+    harness = TestHarness(url_ta,
+                          time_limit_mins=time_limit_mins,
+                          operator=operator)
 
     log_formatter = \
         logging.Formatter('%(asctime)s:%(name)s:%(levelname)s: %(message)s',
@@ -284,6 +292,13 @@ if __name__ == '__main__':
                         type=str,
                         required=True,
                         help='the path to the file where logs should be written.')  # noqa: pycodestyle
+    parser.add_argument('--time-limit-mins',
+                        type=float,
+                        help='the number of minutes given to the adaptation process.')
+    parser.add_argument('--operator',
+                        type=str,
+                        default=None,
+                        help='the perturbation operator that should be chosen.')
     parser.add_argument('--debug',
                         action='store_true',
                         help='enables debugging mode.')
@@ -291,4 +306,6 @@ if __name__ == '__main__':
     launch(port=args.port,
            url_ta=args.url_ta,
            log_file=args.log_file,
-           debug=args.debug)
+           debug=args.debug,
+           time_limit_mins=args.time_limit_mins,
+           operator=args.operator)
