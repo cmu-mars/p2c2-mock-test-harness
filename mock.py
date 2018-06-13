@@ -149,8 +149,8 @@ class TestHarness(object):
         logger.debug("/adapt response: %s", r)
         logger.debug("/adapt response: %s", r.json())
         logger.debug("/adapt code: %d", r.status_code)
-        if not r.status_code == 204:
-            logger.error("SOMETHING BAD HAPPENED")
+        if not r.status_code == 202:
+            logger.error("Failed to trigger adaptation.")
         logger.info("Triggered adaptation.")
 
     def __stop(self) -> None:
