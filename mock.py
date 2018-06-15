@@ -23,7 +23,8 @@ app = flask.Flask(__name__)
 OPERATORS = [
     'flip-arithmetic-operator',
     'flip-relational-operator',
-    'flip-boolean-operator'
+    'flip-boolean-operator',
+    'flip-signedness'
 ]
 
 
@@ -31,9 +32,11 @@ class TestHarness(object):
     def __init__(self,
                  url_ta: str,
                  time_limit_mins: float,
-                 operator: Optional[str]
+                 operator: Optional[str] = None,
+                 filename: Optional[str] = None
                  ) -> None:
         assert time_limit_mins > 0
+        self.__filename = filename
         self.__time_limit_mins = time_limit_mins
         self.__finished = threading.Event()
         self.__url_ta = url_ta
@@ -55,12 +58,12 @@ class TestHarness(object):
         url = self._url("files")
         r = requests.get(url)
         if r.status_code != 200:
-            logger.error("Failed to determine mutable files: %s", r)
+            logger.error("failed to determine mutable files: %s", r)
             raise SystemExit
 
-        logger.debug("Parsing JSON response from GET /files")
+        logger.debug("parsing JSON response from GET /files")
         files = r.json()
-        logger.debug("Parsed JSON response from GET /files")
+        logger.debug("parsed JSON response from GET /files")
         assert isinstance(files, list)
         assert all(isinstance(f, str) for f in files)
         return files
@@ -68,26 +71,29 @@ class TestHarness(object):
     def __perturbations(self) -> List[Any]:
         perturbations = []
 
-        logger.info("Finding set of mutable files.")
+        logger.info("finding set of mutable files.")
         files = self.__mutable_files()
-        logger.info("Found set of mutable files: %s", files)
+        logger.info("found set of mutable files:\n%s",
+                    '\n'.join(['  * {}'.format(f) for f in files]))
 
-        fn = random.choice(files)
-        fn = 'src/ros_comm/roscpp/src/libros/transport_subscriber_link.cpp'
-        logger.info("Finding perturbations in file: %s", fn)
+        if not self.__filename:
+            logger.info("no file specified: choosing one at random.")
+            fn = random.choice(files)
+        else:
+            fn = self.__filename
+        logger.info("finding perturbations in file: %s", fn)
 
         response = \
             requests.get(self._url("perturbations"),
                          json={'file': fn,
                                'shape': self.__operator})
-
         if response.status_code != 200:
-            logger.warning("Failed to find perturbations in file: %s.\nResponse: %s",  # noqa: pycodestyle
+            logger.warning("failed to find perturbations in file: %s.\nResponse: %s",  # noqa: pycodestyle
                            fn,
                            response)
             return []
 
-        logger.debug("Computed all perturbations in file: %s", fn)
+        logger.debug("computed all perturbations in file: %s", fn)
         try:
             jsn = response.json()
             assert isinstance(jsn, dict)
@@ -97,11 +103,9 @@ class TestHarness(object):
         except Exception as e:
             logger.exception("Failed to decode perturbations: %s", e)
             raise
-        logger.info("Found %d perturbations in file: %s",
+        logger.info("found %d perturbations in file: %s",
                     len(perturbations_in_file), fn)
         perturbations += perturbations_in_file
-
-        logger.info("Finished computing set of all perturbations.")
         return perturbations
 
     def __perturb(self) -> bool:
@@ -115,30 +119,30 @@ class TestHarness(object):
         logger.info("Perturbing system...")
 
         # keep attempting to apply perturbations until one is successful
-        logger.info("Computing set of perturbations.")
+        logger.info("computing set of perturbations.")
         perturbations = self.__perturbations()
-        logger.info("Computed set of %d perturbations.",
+        logger.info("computed set of %d perturbations.",
                     len(perturbations))
         random.shuffle(perturbations)
         logger.debug("%d perturbations: %s.",
                      len(perturbations), perturbations)
         while perturbations:
             p = perturbations.pop()
-            logger.info("Attempting to apply perturbation: %s.", p)
+            logger.info("attempting to apply perturbation: %s.", p)
             logger.debug("%d perturbations left.", len(perturbations))
             r = requests.post(self._url("perturb"), json=p)
             if r.status_code == 204:
-                logger.info("Successfully applied perturbation.")
+                logger.info("successfully applied perturbation.")
                 return True
             else:
-                logger.warning("Failed to apply perturbation: %s [reason: %s].",
+                logger.warning("failed to apply perturbation: %s [reason: %s].",
                                p, r)
 
-        logger.error("Failed to perturb system.")
+        logger.error("failed to perturb system.")
         return False
 
     def __adapt(self) -> None:
-        logger.info("Triggering adaptation...")
+        logger.info("triggering adaptation...")
 
         payload = {
             'time-limit': self.__time_limit_mins
@@ -161,7 +165,7 @@ class TestHarness(object):
     def __start(self) -> None:
         time.sleep(5)
         if not self.__perturb():
-            logger.error("Failed to inject ANY perturbation into the system.")
+            logger.error("failed to inject ANY perturbation into the system.")
             raise SystemExit # TODO how is this handled?
         self.__adapt()
 
@@ -170,25 +174,25 @@ class TestHarness(object):
         logger.info("__start is finished.")
 
     def ready(self) -> None:
-        logger.info("We're ready to go!")
+        logger.info("we're ready to go!")
         self.__thread = threading.Thread(target=self.__start)
         self.__thread.start()
 
     def error(self) -> None:
-        logger.info("An error occurred -- killing the test harness")
+        logger.info("an error occurred -- killing the test harness")
         self.__errored = True
         self.__finished.set()
 
     def done(self, report) -> None:
-        logger.info("Adaptation has finished.")
+        logger.info("adaptation has finished.")
         self.__finished.set()
         pp(report)
         num_attempts = report['num-attempts']
         running_time = report['running-time']
         outcome = report['outcome']
-        logger.info("Num. attempted patches: %d", num_attempts)
-        logger.info("Running time: %.2f minutes", running_time)
-        logger.info("Outcome: %s", outcome)
+        logger.info("num. attempted patches: %d", num_attempts)
+        logger.info("running time: %.2f minutes", running_time)
+        logger.info("outcome: %s", outcome)
 
 
 harness = None # type: Optional[TestHarness]
@@ -232,12 +236,14 @@ def launch(*,
            debug: bool = True,
            log_file: str = 'cp2th.log',
            time_limit_mins: float = 15,
-           operator: Optional[str] = None
+           operator: Optional[str] = None,
+           filename: Optional[str] = None
            ) -> None:
     global harness
     harness = TestHarness(url_ta,
                           time_limit_mins=time_limit_mins,
-                          operator=operator)
+                          operator=operator,
+                          filename=filename)
 
     log_formatter = \
         logging.Formatter('%(asctime)s:%(name)s:%(levelname)s: %(message)s',
@@ -297,6 +303,10 @@ if __name__ == '__main__':
                         type=str,
                         default=None,
                         help='the perturbation operator that should be chosen.')
+    parser.add_argument('--filename',
+                        type=str,
+                        default=None,
+                        help='the name of the file that should be perturbed.')
     parser.add_argument('--debug',
                         action='store_true',
                         help='enables debugging mode.')
@@ -306,4 +316,5 @@ if __name__ == '__main__':
            log_file=args.log_file,
            debug=args.debug,
            time_limit_mins=args.time_limit_mins,
-           operator=args.operator)
+           operator=args.operator,
+           filename=args.filename)
