@@ -24,18 +24,22 @@ OPERATORS = [
     'flip-arithmetic-operator',
     'flip-relational-operator',
     'flip-boolean-operator',
-    'flip-signedness'
+    'flip-signedness',
+    'delete-conditional-control-flow',
+    'undo-transformation',
+    'delete-void-function-call'
 ]
 
 
 class TestHarness(object):
     def __init__(self,
                  url_ta: str,
-                 time_limit_mins: float,
+                 time_limit_mins: Optional[float],
+                 attempts: Optional[int] = None,
                  operator: Optional[str] = None,
                  filename: Optional[str] = None
                  ) -> None:
-        assert time_limit_mins > 0
+        # assert time_limit_mins > 0
         self.__filename = filename
         self.__time_limit_mins = time_limit_mins
         self.__finished = threading.Event()
@@ -144,9 +148,12 @@ class TestHarness(object):
     def __adapt(self) -> None:
         logger.info("triggering adaptation...")
 
-        payload = {
-            'time-limit': self.__time_limit_mins
-        }
+        payload = {}
+        if self.__time_limit_mins:
+            payload['time-limit'] = self.__time_limit_mins
+        if self.__attempts:
+            payload['attempts'] = self.__attempts
+
         logger.info('using time limit of %.2f minutes', self.__time_limit_mins)
         logger.debug("computing /adapt URL")
         logger.debug("payload for /adapt: %s", payload)
@@ -235,13 +242,15 @@ def launch(*,
            url_ta: str = '0.0.0.0',
            debug: bool = True,
            log_file: str = 'cp2th.log',
-           time_limit_mins: float = 15,
+           time_limit_mins: Optional[float] = None,
+           attempts: Optional[int] = None,
            operator: Optional[str] = None,
            filename: Optional[str] = None
            ) -> None:
     global harness
     harness = TestHarness(url_ta,
                           time_limit_mins=time_limit_mins,
+                          attempts=attempts,
                           operator=operator,
                           filename=filename)
 
@@ -298,7 +307,11 @@ if __name__ == '__main__':
                         help='the path to the file where logs should be written.')  # noqa: pycodestyle
     parser.add_argument('--time-limit-mins',
                         type=float,
+                        default=None,
                         help='the number of minutes given to the adaptation process.')
+    parser.add_argument('--attempts',
+                        type=int,
+                        help='the number of attempts minutes given to the adaptation process.')
     parser.add_argument('--operator',
                         type=str,
                         default=None,
@@ -316,5 +329,6 @@ if __name__ == '__main__':
            log_file=args.log_file,
            debug=args.debug,
            time_limit_mins=args.time_limit_mins,
+           attempts=args.attempts,
            operator=args.operator,
            filename=args.filename)
