@@ -16,6 +16,7 @@ import flask
 import http.client
 
 logger = logging.getLogger("mockth")  # type: logging.Logger
+logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.NullHandler())
 
 app = flask.Flask(__name__)
@@ -42,17 +43,28 @@ class TestHarness(object):
         # assert time_limit_mins > 0
         self.__filename = filename
         self.__time_limit_mins = time_limit_mins
+        self.__attempts = attempts
         self.__finished = threading.Event()
         self.__url_ta = url_ta
         self.__thread = None # type: Optional[threading.Thread]
         self.__errored = False
 
+        if attempts:
+            logger.info("using attempt limit: %d attempts", attempts)
+        else:
+            logger.info("not using attempt limit")
+
+        if time_limit_mins:
+            logger.info("using time limit: %d minutes", time_limit_mins)
+        else:
+            logger.info("not using time limit")
+
         if not operator:
-            logging.info("no perturbation operator specified: choosing one at random.")  # noqa: pycodestyle
+            logger.info("no perturbation operator specified: choosing one at random.")  # noqa: pycodestyle
             operator = random.choice(OPERATORS)
         else:
             assert operator in OPERATORS
-        logging.info("using perturbation operator: %s", operator)
+        logger.info("using perturbation operator: %s", operator)
         self.__operator = operator
 
     def _url(self, path: str) -> str:
@@ -150,11 +162,20 @@ class TestHarness(object):
 
         payload = {}
         if self.__time_limit_mins:
+            logger.info("using time limit: %d minutes",
+                        self.__time_limit_mins)
             payload['time-limit'] = self.__time_limit_mins
-        if self.__attempts:
-            payload['attempts'] = self.__attempts
+        else:
+            logger.info("not using time limit")
 
-        logger.info('using time limit of %.2f minutes', self.__time_limit_mins)
+        if self.__attempts:
+            logger.info("using attempt limit: %d attempts",
+                        self.__attempts)
+            payload['attempt-limit'] = self.__attempts
+        else:
+            logger.info("not using attempt limit")
+        logger.info("using payload: %s", payload)
+
         logger.debug("computing /adapt URL")
         logger.debug("payload for /adapt: %s", payload)
         url = self._url("adapt")
