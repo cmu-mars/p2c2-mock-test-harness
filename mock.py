@@ -38,10 +38,12 @@ class TestHarness(object):
                  time_limit_mins: Optional[float],
                  attempts: Optional[int] = None,
                  operator: Optional[str] = None,
-                 filename: Optional[str] = None
+                 filename: Optional[str] = None,
+                 line: Optional[int] = None
                  ) -> None:
         # assert time_limit_mins > 0
         self.__filename = filename
+        self.__line = line
         self.__time_limit_mins = time_limit_mins
         self.__attempts = attempts
         self.__finished = threading.Event()
