@@ -131,7 +131,7 @@ class TestHarness(object):
         # restrict to perturbations at the specified line
         if self.__line:
             logger.info("restricting perturbations to line %d", self.__line)
-            perturbations = [p for p in perturbations if p['at']['start']['line'] == self.__line]
+            perturbations = [p for p in perturbations if p['at']['stop']['line'] == self.__line]
             logger.info("restricted perturbations to line %d", self.__line)
 
         return perturbations
