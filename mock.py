@@ -51,6 +51,9 @@ class TestHarness(object):
         self.__thread = None # type: Optional[threading.Thread]
         self.__errored = False
 
+        if line:
+            logger.info("restricting perturbations to line %d", line)
+
         if attempts:
             logger.info("using attempt limit: %d attempts", attempts)
         else:
@@ -124,6 +127,13 @@ class TestHarness(object):
         logger.info("found %d perturbations in file: %s",
                     len(perturbations_in_file), fn)
         perturbations += perturbations_in_file
+
+        # restrict to perturbations at the specified line
+        if self.__line:
+            logger.info("restricting perturbations to line %d", self.__line)
+            perturbations = [p for p in perturbations if p['at']['start']['line'] == self.__line]
+            logger.info("restricted perturbations to line %d", self.__line)
+
         return perturbations
 
     def __perturb(self) -> bool:
@@ -142,12 +152,9 @@ class TestHarness(object):
         logger.info("computed set of %d perturbations.",
                     len(perturbations))
         random.shuffle(perturbations)
-        logger.debug("%d perturbations: %s.",
-                     len(perturbations), perturbations)
         while perturbations:
             p = perturbations.pop()
             logger.info("attempting to apply perturbation: %s.", p)
-            logger.debug("%d perturbations left.", len(perturbations))
             r = requests.post(self._url("perturb"), json=p)
             if r.status_code == 204:
                 logger.info("successfully applied perturbation.")
@@ -268,14 +275,16 @@ def launch(*,
            time_limit_mins: Optional[float] = None,
            attempts: Optional[int] = None,
            operator: Optional[str] = None,
-           filename: Optional[str] = None
+           filename: Optional[str] = None,
+           line: Optional[int] = None
            ) -> None:
     global harness
     harness = TestHarness(url_ta,
                           time_limit_mins=time_limit_mins,
                           attempts=attempts,
                           operator=operator,
-                          filename=filename)
+                          filename=filename,
+                          line=line)
 
     log_formatter = \
         logging.Formatter('%(asctime)s:%(name)s:%(levelname)s: %(message)s',
@@ -311,7 +320,7 @@ def launch(*,
     logger.addHandler(log_to_stdout)
     logger.addHandler(log_to_file)
 
-    app.run(host='0.0.0.0', port=port, debug=debug, threaded=True)
+    app.run(host='0.0.0.0', port=port, debug=True, threaded=True)
 
 
 if __name__ == '__main__':
@@ -343,6 +352,10 @@ if __name__ == '__main__':
                         type=str,
                         default=None,
                         help='the name of the file that should be perturbed.')
+    parser.add_argument('--line',
+                        type=int,
+                        default=None,
+                        help='the number of the line that should be perturbed.')
     parser.add_argument('--debug',
                         action='store_true',
                         help='enables debugging mode.')
@@ -354,4 +367,5 @@ if __name__ == '__main__':
            time_limit_mins=args.time_limit_mins,
            attempts=args.attempts,
            operator=args.operator,
-           filename=args.filename)
+           filename=args.filename,
+           line=args.line)
